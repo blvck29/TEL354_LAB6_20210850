@@ -287,7 +287,7 @@ def opcion_servidores():
         
         if opcion == "1":
             print("Opción 1 seleccionada: Listar")
-            mostrar_servidores()
+            listar_servidores()
         elif opcion == "2":
             print("Opción 2 seleccionada: Mostrar detalles")
             mostrar_servidores()
@@ -425,6 +425,19 @@ def eliminar_alumno_de_curso():
     print(f"Alumno {alumno_a_eliminar.nombre} eliminado del curso {curso_encontrado.nombre}.")
 
 
+def listar_servidores():
+    global servidores
+    table_servidores = PrettyTable()
+    table_servidores.field_names = ["Nombre del Servidor", "IP"]
+
+    for servidor in servidores:
+        for servicio in servidor.servicios:
+            table_servidores.add_row([servidor.nombre, servidor.direccion_ip])
+
+    print("\nLista de Servidores:")
+    print(table_servidores)
+
+
 def mostrar_servidores():
     global servidores
     table_servidores = PrettyTable()
@@ -475,8 +488,6 @@ def mostrar_alumnos():
     
     print("\nLista de Alumnos:")
     print(table)
-
-
 
 
 def mostrar_alumnos_curso():
