@@ -297,40 +297,45 @@ def opcion_servidores():
             print("Opción no válida.")
 
 
+
+
 def mostrar_detalles_cursos():
     global cursos
-    print("\nLista de Detalles de Cursos:")
 
-    table_cursos = PrettyTable()
-    table_cursos.field_names = ["Código", "Nombre", "Estado"]
+    codigo_curso = input("\nIngrese el código del curso para ver los detalles: ")
 
+    curso_encontrado = None
     for curso in cursos:
-        table_cursos.add_row([curso.codigo, curso.nombre, curso.estado])
+        if curso.codigo == codigo_curso:
+            curso_encontrado = curso
+            break
 
-    print(table_cursos)
+    if not curso_encontrado:
+        print(f"No se encontró un curso con el código {codigo_curso}.")
+        return
 
-    for curso in cursos:
-        print(f"\nDetalles del curso: {curso.nombre} (Código: {curso.codigo})")
+    print(f"\nDetalles del curso: {curso_encontrado.nombre} (Código: {curso_encontrado.codigo})")
 
-        table_alumnos = PrettyTable()
-        table_alumnos.field_names = ["Nombre", "Código", "MAC"]
+    table_alumnos = PrettyTable()
+    table_alumnos.field_names = ["Nombre", "Código", "MAC"]
 
-        for alumno in curso.alumnos:
-            table_alumnos.add_row([alumno.nombre, alumno.codigo, alumno.mac])
+    for alumno in curso_encontrado.alumnos:
+        table_alumnos.add_row([alumno.nombre, alumno.codigo, alumno.mac])
 
-        print("\nAlumnos en este curso:")
-        print(table_alumnos)
+    print("\nAlumnos en este curso:")
+    print(table_alumnos)
 
-        table_servidores = PrettyTable()
-        table_servidores.field_names = ["Nombre del Servidor", "IP"]
+    table_servidores = PrettyTable()
+    table_servidores.field_names = ["Nombre del Servidor", "IP"]
 
-        for servidor in curso.servidores:
-            table_servidores.add_row([servidor.nombre, servidor.direccion_ip])
-            for servicio in servidor.servicios:
-                table_servidores.add_row([f"  Servicio: {servicio.nombre}", f"Protocolo: {servicio.protocolo} - Puerto: {servicio.puerto}"])
+    for servidor in curso_encontrado.servidores:
+        table_servidores.add_row([servidor.nombre, servidor.direccion_ip])
+        for servicio in servidor.servicios:
+            table_servidores.add_row([f"  Servicio: {servicio.nombre}", f"Protocolo: {servicio.protocolo} - Puerto: {servicio.puerto}"])
 
-        print("\nServidores en este curso:")
-        print(table_servidores)
+    print("\nServidores en este curso:")
+    print(table_servidores)
+
 
 
 def actualizar_alumnos_curso():
@@ -361,6 +366,8 @@ def actualizar_alumnos_curso():
             print("Opción no válida.")
 
 
+
+
 def añadir_alumno_a_curso():
     global cursos, alumnos
     mostrar_cursos()
@@ -389,13 +396,18 @@ def añadir_alumno_a_curso():
         print(f"No se encontró un alumno con el código {codigo_alumno}.")
         return
 
+    if alumno_encontrado in curso_encontrado.alumnos:
+        print(f"El alumno {alumno_encontrado.nombre} ya está registrado en el curso {curso_encontrado.nombre}.")
+        return
+
     curso_encontrado.add_alumno(alumno_encontrado)
     print(f"Alumno {alumno_encontrado.nombre} añadido al curso {curso_encontrado.nombre}.")
 
 
+
 def eliminar_alumno_de_curso():
     global cursos
-    mostrar_cursos()   
+    mostrar_cursos()
     codigo_curso = input("Ingrese el código del curso: ")
 
     mostrar_alumnos()
@@ -413,7 +425,7 @@ def eliminar_alumno_de_curso():
 
     alumno_a_eliminar = None
     for alumno in curso_encontrado.alumnos:
-        if alumno.codigo == codigo_alumno:
+        if str(alumno.codigo) == str(codigo_alumno):  # Comparar como cadenas para evitar problemas de tipo
             alumno_a_eliminar = alumno
             break
 
@@ -431,24 +443,36 @@ def listar_servidores():
     table_servidores.field_names = ["Nombre del Servidor", "IP"]
 
     for servidor in servidores:
-        for servicio in servidor.servicios:
-            table_servidores.add_row([servidor.nombre, servidor.direccion_ip])
+        table_servidores.add_row([servidor.nombre, servidor.direccion_ip])            
 
     print("\nLista de Servidores:")
     print(table_servidores)
+
 
 
 def mostrar_servidores():
     global servidores
+    nombre_servidor = input("\nIngrese el nombre del servidor para ver sus servicios: ")
+
+    servidor_encontrado = None
+    for servidor in servidores:
+        if servidor.nombre.lower() == nombre_servidor.lower():
+            servidor_encontrado = servidor
+            break
+
+    if not servidor_encontrado:
+        print(f"No se encontró un servidor con el nombre {nombre_servidor}.")
+        return
+
     table_servidores = PrettyTable()
     table_servidores.field_names = ["Nombre del Servidor", "IP", "Servicio", "Protocolo", "Puerto"]
 
-    for servidor in servidores:
-        for servicio in servidor.servicios:
-            table_servidores.add_row([servidor.nombre, servidor.direccion_ip, servicio.nombre, servicio.protocolo, servicio.puerto])
+    for servicio in servidor_encontrado.servicios:
+        table_servidores.add_row([servidor_encontrado.nombre, servidor_encontrado.direccion_ip, servicio.nombre, servicio.protocolo, servicio.puerto])
 
-    print("\nLista de Servidores:")
+    print(f"\nServicios del servidor {servidor_encontrado.nombre} (IP: {servidor_encontrado.direccion_ip}):")
     print(table_servidores)
+
 
 
 def listar_alumnos():
@@ -488,6 +512,7 @@ def mostrar_alumnos():
     
     print("\nLista de Alumnos:")
     print(table)
+
 
 
 def mostrar_alumnos_curso():
