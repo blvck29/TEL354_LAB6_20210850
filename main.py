@@ -2,6 +2,8 @@ import requests
 import yaml
 from prettytable import PrettyTable
 
+controller_ip = '10.20.12.65'
+
 # Clases
 class Alumno:
     def __init__(self, nombre, codigo, mac):
@@ -50,33 +52,6 @@ class Conexion:
         self.alumno = alumno
         self.servidor = servidor
         self.servicio = servicio
-        self.ruta = None
-
-    def calcular_ruta(self, controller_ip):
-        src_dpid, src_port = get_attachment_points(self.alumno.mac, controller_ip)
-        dst_dpid, dst_port = get_attachment_points(self.servidor.direccion_ip, controller_ip)
-
-        if not src_dpid or not dst_dpid:
-            print("Error: No se encontró la ruta de uno de los puntos de conexión.")
-            return None
-
-        # Obtener la ruta entre los switches
-        self.ruta = get_route(src_dpid, src_port, dst_dpid, dst_port, controller_ip)
-        if not self.ruta:
-            print("Error: No se pudo obtener la ruta entre los switches.")
-            return None
-
-        return self.ruta
-
-    def crear_flows(self, controller_ip):
-        if not self.ruta:
-            print("Error: Ruta no calculada.")
-            return
-
-        # Crear flows para permitir la conexión entre el alumno y el servidor
-        for step in self.ruta:
-            crear_flow(self.handler, step, controller_ip)
-
 
 # Definir las listas globales
 alumnos = []
@@ -113,8 +88,8 @@ def get_list_devices(controller_ip):
         print(f'FAILED REQUEST | STATUS: {response.status_code}')
 
 
-# Función que obtiene el punto de conexión (DPID y puerto) para una MAC dada
-def get_attachment_points(mac, controller_ip):
+# Función que obtiene el punto de conexión (DPID y puerto) para una MAC o IP dada
+def get_attachment_points(mac_or_ip, controller_ip):
     target_api = '/wm/device/'
     headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
     url = f'http://{controller_ip}:8080{target_api}'
@@ -126,7 +101,14 @@ def get_attachment_points(mac, controller_ip):
     
     dispositivos = response.json()
     for dispositivo in dispositivos:
-        if dispositivo['mac'][0].lower() == mac.lower():
+        # Buscar por MAC
+        if dispositivo.get('mac') and dispositivo['mac'][0].lower() == mac_or_ip.lower():
+            puntos = dispositivo.get('attachmentPoint', [])
+            if puntos:
+                punto = puntos[0] # Tomamos el primero si hay varios
+                return punto['switchDPID'], punto['port']
+        # Buscar por IP
+        if dispositivo.get('ipv4') and dispositivo['ipv4'][0] == mac_or_ip:
             puntos = dispositivo.get('attachmentPoint', [])
             if puntos:
                 punto = puntos[0] # Tomamos el primero si hay varios
@@ -146,38 +128,29 @@ def get_route(src_dpid, src_port, dst_dpid, dst_port, controller_ip):
     return response.json()
 
 
-def build_route(ruta, handler, controller_ip):
-    if not ruta:
-        print("Error: No hay ruta calculada.")
-        return
-    
-    for step in ruta:
-        crear_flow(handler, step, controller_ip)  # Crear el flow para cada paso de la ruta
-
-    print(f"Conexión {handler} establecida exitosamente con los flows generados.")
 
 
-def crear_flow(handler, step, controller_ip):
-    flow_data = {
-        "dpid": step["switch"],
-        "match": {
-            "in_port": step["port"],
-            "eth_type": 0x0800,  # IPv4, puedes ajustar esto si usas otros protocolos
-            "ipv4_src": step.get("src_ip", "-"),
-            "ipv4_dst": step.get("dst_ip", "-")
-        },
-        "actions": {
-            "output": "NORMAL"  # Permitir el flujo normal
-        }
+def insertar_flows(mac_src, ip_dst, protocolo, puerto, handler, controller_ip):
+    dpid, port = get_attachment_points(mac_src, controller_ip)
+    if not dpid:
+        print("No se pudo determinar el punto de conexión.")
+        return False
+
+    flow = {
+        "switch": dpid,
+        "name": handler,
+        "priority": "32768",
+        "eth_type": "0x0800",
+        "ipv4_dst": ip_dst,
+        "eth_src": mac_src,
+        "ip_proto": "0x06" if protocolo.lower() == "tcp" else "0x11",
+        "tp_dst": str(puerto),
+        "active": "true",
+        "actions": f"output={port}"  
     }
+    response = requests.post(f"http://{controller_ip}:8080/wm/staticflowpusher/json", json=flow)
+    return response.status_code == 200
 
-    url = f"http://{controller_ip}:8080/wm/v2/flows/{step['switch']}"
-    response = requests.post(url, json=flow_data)
-
-    if response.status_code == 200:
-        print(f"Flow creado exitosamente: {flow_data}")
-    else:
-        print(f"Error al crear flow: {response.status_code}, {response.text}")
 
 
 def main():
@@ -241,8 +214,13 @@ def importar_datos():
     nombre_archivo = input("\nIngrese el nombre del archivo (sin extensión): ")
     ruta = nombre_archivo + '.yaml'
     
-    with open(ruta, 'r') as archivo:
-        datos = yaml.safe_load(archivo)
+    try:
+        with open(ruta, 'r') as archivo:
+            datos = yaml.safe_load(archivo)
+        print("Archivo cargado correctamente")
+    except:
+        print("Error al cargar el archivo")
+    
     
     alumnos_dict = {alumno['codigo']: Alumno(alumno['nombre'], alumno['codigo'], alumno['mac']) for alumno in datos['alumnos']}
     
@@ -366,103 +344,114 @@ def opcion_servidores():
             print("Opción no válida.")
 
 
+
+
 def opcion_conexiones():
     global conexiones 
     while True:
         print("\nSelecciona una opción:")
         print("1) Crear conexión")
         print("2) Listar conexiones")
-        print("3) Mostrar detalles de una conexión")
-        print("4) Borrar conexión")
-        print("5) Regresar")
+        print("3) Borrar conexión")
+        print("4) Regresar")
         print("\n>>> ", end="")        
 
         opcion = input()
         
-        if opcion == "5":
+        if opcion == "4":
             print("Volviendo al menú principal...")
             break
         
         if opcion == "1":
             print("Opción 1 seleccionada: Crear conexión")
-            handler = input("Ingrese el handler de la conexión: ")
-            alumno_codigo = input("Ingrese el código del alumno: ")
-            servidor_nombre = input("Ingrese el nombre del servidor: ")
-            servicio_nombre = input("Ingrese el nombre del servicio: ")
-
-            # Buscar el alumno y el servidor
-            alumno = next((a for a in alumnos if str(a.codigo) == str(alumno_codigo)), None)
-            servidor = next((s for s in servidores if s.nombre == servidor_nombre), None)
-            servicio = None
-            if servidor:
-                servicio = next((s for s in servidor.servicios if s.nombre == servicio_nombre), None)
-
-            if not alumno or not servidor or not servicio:
-                print("Alumno, servidor o servicio no encontrado.")
-                continue
-
-            conexion = crear_conexion(handler, alumno, servidor, servicio, controller_ip)
-            if conexion:
-                conexiones.append(conexion)
-                print(f"Conexión {handler} creada exitosamente.")
+            crear_conexion()
         
         elif opcion == "2":
             print("Opción 2 seleccionada: Listar conexiones")
-            listar_conexiones(conexiones)
-
-        elif opcion == "3":
-            print("Opción 3 seleccionada: Mostrar detalles")
-            handler = input("Ingrese el handler de la conexión: ")
-            conexion = next((c for c in conexiones if c.handler == handler), None)
-            if conexion:
-                mostrar_detalle(conexion)
-            else:
-                print(f"No se encontró una conexión con el handler {handler}.")
+            listar_conexiones()
         
-        elif opcion == "4":
-            print("Opción 4 seleccionada: Borrar conexión")
-            handler = input("Ingrese el handler de la conexión: ")
-            borrar_conexion(conexiones, handler)
+        elif opcion == "3":
+            print("Opción 3 seleccionada: Borrar conexión")
+            borrar_conexion()
 
         else:
             print("Opción no válida.")
 
 
-# Crear una nueva conexión
-def crear_conexion(handler, alumno, servidor, servicio, controller_ip):
-    conexion = Conexion(handler, alumno, servidor, servicio)
-    ruta = conexion.calcular_ruta(controller_ip)
-    if ruta:
-        conexion.crear_flows(controller_ip)
-        return conexion
-    return None
+def crear_conexion():
+    global conexiones
+    cod_alumno = input("Ingrese el código del alumno: ")
+    nombre_servidor = input("Ingrese el servidor: ")
+    nombre_servicio = input("Ingrese el servicio: ").lower()
 
-# Listar todas las conexiones
-def listar_conexiones(conexiones):
-    table = PrettyTable()
-    table.field_names = ["Handler", "Alumno", "Servidor", "Servicio"]
-    
-    for conexion in conexiones:
-        table.add_row([conexion.handler, conexion.alumno.nombre, conexion.servidor.nombre, conexion.servicio.nombre])
-    
-    print(table)
+    alumno = next((a for a in alumnos if str(a.codigo) == cod_alumno), None)
+    servidor = next((s for s in servidores if s.nombre == nombre_servidor), None)
 
-# Mostrar detalles de una conexión
-def mostrar_detalle(conexion):
-    print(f"\nDetalles de la conexión {conexion.handler}:")
-    print(f"Alumno: {conexion.alumno.nombre} (MAC: {conexion.alumno.mac})")
-    print(f"Servidor: {conexion.servidor.nombre} (IP: {conexion.servidor.direccion_ip})")
-    print(f"Servicio: {conexion.servicio.nombre} (Protocolo: {conexion.servicio.protocolo}, Puerto: {conexion.servicio.puerto})")
-    print(f"Ruta: {conexion.ruta}")
+    if not alumno or not servidor:
+        print("Alumno o servidor no encontrado.")
+        return
 
-# Borrar una conexión
-def borrar_conexion(conexiones, handler):
+    # Verificar autorización (adaptado del segundo script)
+    autorizado = False
+    for curso in cursos:
+        if curso.estado == "DICTANDO" and alumno in curso.alumnos:
+            for srv in curso.servidores:
+                if srv.nombre == nombre_servidor:
+                    for servicio_srv in srv.servicios:
+                        if servicio_srv.nombre == nombre_servicio:
+                            autorizado = True
+                            break
+                    if autorizado:
+                        break
+            if autorizado:
+                break
+
+    if not autorizado:
+        print("ERROR")
+        print("El alumno no pertenece a un CURSO válido con estado DICTANDO")
+        return
+
+    servicio_obj = next((x for x in servidor.servicios if x.nombre == nombre_servicio), None)
+
+    if servicio_obj:
+        mac_src = alumno.mac
+        ip_dst = servidor.direccion_ip
+        protocolo = servicio_obj.protocolo
+        puerto = servicio_obj.puerto
+        handler = f"{alumno.codigo}-{servidor.nombre}-{servicio_obj.nombre}"
+        
+        success = insertar_flows(mac_src, ip_dst, protocolo, puerto, handler, controller_ip)
+
+        if success:
+            conexiones.append(Conexion(handler, alumno, servidor, servicio_obj))
+            print(f"Conexión creada con handler: {handler}")
+        else:
+            print("Error al insertar flow.")
+    else:
+        print("Servicio no encontrado.")
+
+
+def listar_conexiones():
+    global conexiones
+    if not conexiones:
+        print("No hay conexiones registradas.")
+    else:
+        table = PrettyTable()
+        table.field_names = ["Handler", "Alumno", "Servidor", "Servicio"]
+        for c in conexiones:
+            table.add_row([c.handler, c.alumno.nombre, c.servidor.nombre, c.servicio.nombre])
+        print(table)
+
+def borrar_conexion():
+    global conexiones
+    handler = input("Ingrese el handler de la conexión a eliminar: ")
     conexion = next((c for c in conexiones if c.handler == handler), None)
     if conexion:
+        requests.delete(f"http://{controller_ip}:8080/wm/staticflowpusher/json", json={"name": handler})
         conexiones.remove(conexion)
-        print(f"Conexión {handler} eliminada.")
+        print(f"Conexión con handler '{handler}' eliminada correctamente.")
     else:
-        print(f"No se encontró una conexión con el handler {handler}.")
+        print("No se encontró una conexión con ese handler.")
 
 
 def mostrar_detalles_cursos():
@@ -587,7 +576,7 @@ def eliminar_alumno_de_curso():
 
     alumno_a_eliminar = None
     for alumno in curso_encontrado.alumnos:
-        if str(alumno.codigo) == str(codigo_alumno):
+        if str(alumno.codigo) == str(codigo_alumno):  # Comparar como cadenas para evitar problemas de tipo
             alumno_a_eliminar = alumno
             break
 
@@ -713,7 +702,4 @@ def mostrar_cursos():
 
 
 if __name__ == "__main__":
-    controller_ip = "10.20.12.65"
-    # Mostrar lista de dispositivos detectados
-    # get_list_devices(controller_ip)
     main()
