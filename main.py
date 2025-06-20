@@ -391,7 +391,7 @@ def crear_conexion():
         print("Alumno o servidor no encontrado.")
         return
 
-    # Verificar autorización (adaptado del segundo script)
+    # Verificar autorización
     autorizado = False
     for curso in cursos:
         if curso.estado == "DICTANDO" and alumno in curso.alumnos:
@@ -576,7 +576,7 @@ def eliminar_alumno_de_curso():
 
     alumno_a_eliminar = None
     for alumno in curso_encontrado.alumnos:
-        if str(alumno.codigo) == str(codigo_alumno):  # Comparar como cadenas para evitar problemas de tipo
+        if str(alumno.codigo) == str(codigo_alumno):
             alumno_a_eliminar = alumno
             break
 

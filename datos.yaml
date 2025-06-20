@@ -9,9 +9,6 @@ alumnos:
         - nombre: Luisa Marvel
           codigo: 20080621
           mac: 44:11:3F:22:C3:77
-        - nombre: Oscar Wilde
-          codigo: 19003011
-          mac: fa:16:3e:66:a1:0e
 # Bloque de cursos:
 cursos:
        - codigo: TEL354
